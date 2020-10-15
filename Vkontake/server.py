@@ -2,8 +2,10 @@ from socketserver import BaseRequestHandler, ThreadingMixIn, TCPServer
 
 class MyTCPHandler(BaseRequestHandler):
     def handle(self):
+        # Получение сообщения
         data = self.request.recv(1024)
-        self.request.sendall(data)
+        # Отправка ответа
+        self.request.sendall(data[::-1]) 
 
 
 class ThreadedTCPServer(ThreadingMixIn, TCPServer): 
