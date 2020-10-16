@@ -12,7 +12,6 @@ class MyWidget(QMainWindow):
         self.ip = ''
         self.pushButton.clicked.connect(self.connect)
         self.pushButton_2.clicked.connect(self.send)
-        self.pushButton_3.clicked.connect(self.check)
 
     def send(self):
         try:
@@ -22,11 +21,12 @@ class MyWidget(QMainWindow):
         else:
             self.client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
             self.client_sock.connect((self.ip, 55321))
-            self.client_sock.sendall(bytes(self.textEdit.toPlainText(), encoding='utf-8'))
-            self.textEdit_2.append(f'<Вы>: {self.textEdit.toPlainText()}')
+            send_data = self.textEdit.toPlainText()
+            self.client_sock.sendall(send_data.encode('utf-8'))
+            self.textEdit_2.append(f'<Вы>: {send_data}')
             message = self.client_sock.recv(1024)
             if message:
-                self.textEdit_2.append(f'<Собеседник>: {str(message, encoding="utf-8")}')
+                self.textEdit_2.append(f'<Собеседник>: {message.decode()}')
             self.client_sock.close()
 
 
@@ -41,15 +41,6 @@ class MyWidget(QMainWindow):
         except Exception:
             print('Error while connecting')
             self.ip = ''
-        
-
-    def check(self):
-        message = self.client_sock.recv(1024)
-        if message:
-            self.textEdit_2.append(f'<Собеседник>: {str(message, encoding="utf-8")}')
-        self.client_sock.close()
-
-
 
 
 if __name__ == '__main__':

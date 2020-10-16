@@ -5,7 +5,7 @@ class MyTCPHandler(BaseRequestHandler):
         # Получение сообщения
         data = self.request.recv(1024)
         # Отправка ответа
-        self.request.sendall(data[::-1]) 
+        self.request.sendall(data) 
 
 
 class ThreadedTCPServer(ThreadingMixIn, TCPServer): 

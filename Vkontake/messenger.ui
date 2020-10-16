@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1220</width>
+    <width>1144</width>
     <height>767</height>
    </rect>
   </property>
@@ -148,29 +148,13 @@ font: 28pt</string>
      <string>Отправить</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_3">
-    <property name="geometry">
-     <rect>
-      <x>1140</x>
-      <y>20</y>
-      <width>71</width>
-      <height>71</height>
-     </rect>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: rgb(225, 227, 230); background-color: rgb(35, 35, 36);</string>
-    </property>
-    <property name="text">
-     <string>Обновить</string>
-    </property>
-   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1220</width>
+     <width>1144</width>
      <height>30</height>
     </rect>
    </property>
