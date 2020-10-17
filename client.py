@@ -35,7 +35,7 @@ class MyWidget(QMainWindow):
             self.ip = self.lineEdit.text()
             assert self.ip
             self.client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-            self.client_sock.connect((self.ip, 55321))
+            self.client_sock.connect((self.ip, 9090))
             self.client_sock.close()
             print('Successfully connected')
         except Exception:
