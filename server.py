@@ -47,8 +47,10 @@ class Server:
                     resp = self.del_contact(request, client_socket)
                 elif request['action'] == 'get_contacts':
                     resp = self.get_contacts(request, client_socket)
-                elif request['action'] == 'msg':
-                    resp = self.handle_message(request)
+                elif request['action'] == 'send_message':
+                    resp = self.handle_message(request, client_socket)
+                elif request['action'] == 'get_messages':
+                    resp = self.get_messages(request, client_socket)
                 else:
                     raise RuntimeError(f'Unknown request: {request["action"]}')
                 print(f'Response to {address}:')
@@ -65,10 +67,6 @@ class Server:
                 except Exception:
                     pass
                 break
-            finally:
-                print('logins', self.logins)
-                print('clients', self.clients)
-                print()
 
     def check_online(self, request, client_socket):
         resp = {'response': 200, 'error': None, 'online': None}
@@ -159,28 +157,43 @@ class Server:
         elif not self.check_existence(client_login):
             resp['response'] = 400
             resp['error'] = f'No such client: {client_login}'
-        elif not self.check_authorization(client_socket, client_login):
-            resp['response'] = 403
-            resp['error'] = 'Access denied'
         else:
             client_contacts = json.loads(self.get_client_contacts(client_login))
             resp['contacts'] = client_contacts
         return resp
 
-    def handle_message(self, request):
+    def handle_message(self, request, client_socket):
         resp = {'response': 200, 'error': None}
+        client_login = request['user']['account_name']
         contact_login = request['to']
-        if not self.check_existence(contact_login):
+        if not self.check_authorization(client_socket, client_login):
+            resp['response'] = 403
+            resp['error'] = 'Access denied'
+        elif not self.check_existence(contact_login):
             resp['response'] = 400
             resp['error'] = f'No such client: {contact_login}'
-        else:
+        elif contact_login in self.logins.values():
+            message = json.dumps(request)
             for socket, login in self.logins.items():
                 if login == contact_login:
-                    socket.send(request.to_bytes())
+                    socket.send(bytes(json.dumps(message), encoding='utf8'))
                     break
-            else:
-                resp.response = 400
-                resp['error'] = f'Client not online: {contact_login}'
+        elif contact_login not in self.logins.values():
+            self.add_unread_messages(contact_login, request)
+        return resp
+
+    def get_messages(self, request, client_socket):
+        resp = {'response': 200, 'error': None, 'messages': []}
+        client_login = request['user']['account_name']
+        if not self.check_authorization(client_socket, client_login):
+            resp['response'] = 403
+            resp['error'] = 'Access denied'
+        elif not self.check_existence(client_login):
+            resp['response'] = 400
+            resp['error'] = f'No such client: {client_login}'
+        else:
+            client_contacts = json.loads(self.get_unread_messages(client_login))
+            resp['messages'] = client_contacts
         return resp
 
     def register(self, client_login, client_password):
@@ -199,16 +212,16 @@ class Server:
 
     def get_password(self, client_login):
         return self.cur.execute("""SELECT password FROM users
-                    WHERE login = ?""", (client_login,)).fetchone()[0]
+                    WHERE login = ?""", (client_login,)).fetchone()
 
     def in_contacts(self, client_login, contact_login):
         contacts = json.loads(self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone()[0])
+                    WHERE login = ?""", (client_login,)).fetchone())
         return contact_login in contacts
 
     def add_to_contacts(self, client_login, contact_login):
         contacts = json.loads(self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone()[0])
+                    WHERE login = ?""", (client_login,)).fetchone())
         contacts.append(contact_login)
         self.cur.execute("""UPDATE users
                     SET contacts = ?
@@ -217,7 +230,7 @@ class Server:
 
     def del_from_contacts(self, client_login, contact_login):
         contacts = json.loads(self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone()[0])
+                    WHERE login = ?""", (client_login,)).fetchone())
         del contacts[contacts.index(contact_login)]
         self.cur.execute("""UPDATE users
                     SET contacts = ?
@@ -226,7 +239,25 @@ class Server:
 
     def get_client_contacts(self, client_login):
         return self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone()[0]
+                    WHERE login = ?""", (client_login,)).fetchone()
+
+    def add_unread_messages(self, client_login, message):
+        messages = json.loads(self.cur.execute("""SELECT contacts FROM users
+                    WHERE login = ?""", (client_login,)).fetchone())
+        messages.append(message)
+        self.cur.execute("""UPDATE users
+                    SET messages = ?
+                    WHERE login = ?""", (json.dumps(messages), client_login))
+        self.con.commit()
+
+    def get_unread_messages(self, client_login):
+        messages =  self.cur.execute("""SELECT contacts FROM users
+                            WHERE login = ?""", (client_login,)).fetchone()
+        self.cur.execute("""UPDATE users
+                    SET messages = []
+                    WHERE login = ?""", (client_login,))
+        self.con.commit()
+        return messages
 
 
 if __name__ == '__main__':
