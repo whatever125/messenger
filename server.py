@@ -91,11 +91,9 @@ class Server:
         if not self.check_existence(client_login):
             resp['response'] = 400
             resp['error'] = f'No such client: {client_login}'
-        elif client_login in self.logins.values():
-            resp['response'] = 403
-            resp['error'] = 'Access denied'
         else:
             client_hash = self.get_password(client_login)
+            print(client_hash, client_digest)
             if client_hash != client_digest:
                 resp['response'] = 403
                 resp['error'] = 'Access denied'
@@ -166,6 +164,7 @@ class Server:
         resp = {'response': 200, 'error': None}
         client_login = request['user']['account_name']
         contact_login = request['to']
+        message = {'action': 'message', 'from': client_login, 'message': None}
         if not self.check_authorization(client_socket, client_login):
             resp['response'] = 403
             resp['error'] = 'Access denied'
@@ -173,13 +172,14 @@ class Server:
             resp['response'] = 400
             resp['error'] = f'No such client: {contact_login}'
         elif contact_login in self.logins.values():
-            message = json.dumps(request)
+            message['message'] = request['message']
             for socket, login in self.logins.items():
                 if login == contact_login:
                     socket.send(bytes(json.dumps(message), encoding='utf8'))
                     break
         elif contact_login not in self.logins.values():
-            self.add_unread_messages(contact_login, request)
+            message['message'] = request['message']
+            self.add_unread_messages(contact_login, message)
         return resp
 
     def get_messages(self, request, client_socket):
@@ -197,8 +197,8 @@ class Server:
         return resp
 
     def register(self, client_login, client_password):
-        self.cur.execute("""INSERT INTO users(login, password, contacts) 
-                    VALUES(?, ?, '[]')""", (client_login, client_password))
+        self.cur.execute("""INSERT INTO users(login, password, contacts, messages) 
+                    VALUES(?, ?, '[]', '[]')""", (client_login, client_password))
         self.con.commit()
 
     def check_authorization(self, client_socket, client_login):
@@ -212,16 +212,16 @@ class Server:
 
     def get_password(self, client_login):
         return self.cur.execute("""SELECT password FROM users
-                    WHERE login = ?""", (client_login,)).fetchone()
+                    WHERE login = ?""", (client_login,)).fetchone()[0]
 
     def in_contacts(self, client_login, contact_login):
         contacts = json.loads(self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone())
+                    WHERE login = ?""", (client_login,)).fetchone()[0])
         return contact_login in contacts
 
     def add_to_contacts(self, client_login, contact_login):
         contacts = json.loads(self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone())
+                    WHERE login = ?""", (client_login,)).fetchone()[0])
         contacts.append(contact_login)
         self.cur.execute("""UPDATE users
                     SET contacts = ?
@@ -230,7 +230,7 @@ class Server:
 
     def del_from_contacts(self, client_login, contact_login):
         contacts = json.loads(self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone())
+                    WHERE login = ?""", (client_login,)).fetchone()[0])
         del contacts[contacts.index(contact_login)]
         self.cur.execute("""UPDATE users
                     SET contacts = ?
@@ -239,11 +239,11 @@ class Server:
 
     def get_client_contacts(self, client_login):
         return self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone()
+                    WHERE login = ?""", (client_login,)).fetchone()[0]
 
     def add_unread_messages(self, client_login, message):
-        messages = json.loads(self.cur.execute("""SELECT contacts FROM users
-                    WHERE login = ?""", (client_login,)).fetchone())
+        messages = json.loads(self.cur.execute("""SELECT messages FROM users
+                    WHERE login = ?""", (client_login,)).fetchone()[0])
         messages.append(message)
         self.cur.execute("""UPDATE users
                     SET messages = ?
@@ -251,10 +251,10 @@ class Server:
         self.con.commit()
 
     def get_unread_messages(self, client_login):
-        messages =  self.cur.execute("""SELECT contacts FROM users
-                            WHERE login = ?""", (client_login,)).fetchone()
+        messages = self.cur.execute("""SELECT messages FROM users
+                            WHERE login = ?""", (client_login,)).fetchone()[0]
         self.cur.execute("""UPDATE users
-                    SET messages = []
+                    SET messages = '[]'
                     WHERE login = ?""", (client_login,))
         self.con.commit()
         return messages
