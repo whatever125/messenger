@@ -18,7 +18,7 @@ class Server:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((self.host, self.port))
         self.socket.listen(1024)
-        self.socket.settimeout(100000)
+        self.socket.settimeout(1000000)
         while True:
             client_socket, address = self.socket.accept()
             t = threading.Thread(target=self.mainloop, args=(client_socket, address))
