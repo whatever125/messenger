@@ -3,10 +3,10 @@ import socket
 import json
 import threading
 
-from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QMainWindow, QInputDialog, QWidget, QTextEdit, \
     QColorDialog
 from PyQt5.QtCore import QMargins, Qt, pyqtSignal, QObject
+from interface import *
 
 
 class LTextEdit(QTextEdit):
@@ -17,10 +17,10 @@ class LTextEdit(QTextEdit):
             QTextEdit.keyPressEvent(self, event)
 
 
-class SettingsDialog(QWidget):
+class SettingsDialog(QWidget, Ui_Form):
     def __init__(self, main):
         super().__init__()
-        uic.loadUi('dialog.ui', self)
+        self.setupUi(self)
         self.main = main
         self.pushButton.clicked.connect(main.changecolor1)
         self.pushButton_3.clicked.connect(main.changecolor2)
@@ -30,10 +30,10 @@ class Communicate(QObject):
     newMessage = pyqtSignal()
 
 
-class MyWidget(QMainWindow):
+class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
     def __init__(self):
         super().__init__()
-        uic.loadUi('reg.ui', self)
+        self.setupRegUi(self)
         try:
             f = open('settings', 'r').readlines()
             self.color1 = f[0]
@@ -130,7 +130,7 @@ class MyWidget(QMainWindow):
             print(E)
 
     def messenger(self):
-        uic.loadUi('messenger.ui', self)
+        self.setupUi(self)
         self.bull = False
         widget = QWidget(self)
         widget.setLayout(self.gridLayout)
@@ -153,7 +153,7 @@ class MyWidget(QMainWindow):
 
     def logout(self):
         self.client_sock.close()
-        uic.loadUi('reg.ui', self)
+        self.setupRegUi(self)
         labels = [self.label, self.label_2, self.label_3, self.label_4]
         buttons = [self.pushButton, self.pushButton_2]
         for i in labels:
