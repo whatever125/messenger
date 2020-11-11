@@ -94,7 +94,6 @@ class Server:
             resp['error'] = f'No such client: {client_login}'
         else:
             client_hash = self.get_password(client_login, con, cur)
-            print(client_hash, client_digest)
             if client_hash != client_digest:
                 resp['response'] = 403
                 resp['error'] = 'Access denied'

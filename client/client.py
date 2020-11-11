@@ -35,7 +35,7 @@ class MyWidget(QMainWindow):
         super().__init__()
         uic.loadUi('reg.ui', self)
         try:
-            f = open('messages/settings', 'r').readlines()
+            f = open('settings', 'r').readlines()
             self.color1 = f[0]
             self.color2 = f[1]
         except Exception:
@@ -102,13 +102,12 @@ class MyWidget(QMainWindow):
                 encoding='utf8'))
             data = self.client_sock.recv(1024)
             self.error.setText(json.loads(data)['error'])
-            print(json.loads(data))
             if json.loads(data)['response'] == 200:
                 self.login = login
                 self.password = password
                 self.messenger()
             else:
-                print('error')
+                print(json.loads(data)['error'])
         except Exception as E:
             print(E)
 
@@ -125,6 +124,8 @@ class MyWidget(QMainWindow):
             self.client_sock.close()
             if json.loads(data)['response'] == 200:
                 self.auth()
+            else:
+                print(json.loads(data)['error'])
         except Exception as E:
             print(E)
 
@@ -134,7 +135,7 @@ class MyWidget(QMainWindow):
         widget = QWidget(self)
         widget.setLayout(self.gridLayout)
         self.setCentralWidget(widget)
-        self.t = threading.Thread(target=self.threading_function)
+        self.t = threading.Thread(target=self.threading_function, daemon=True)
         self.t.start()
         self.responses = []
         self.recolor()
@@ -192,8 +193,6 @@ class MyWidget(QMainWindow):
             name, ok_pressed = QInputDialog.getText(self, "Введите имя контакта",
                                                     "Добавить новый контакт:")
             if ok_pressed:
-                chat = open(f'messages/{self.login};{name}', 'a')
-                chat.close()
                 self.client_sock.sendall(bytes(
                     json.dumps(
                         {'action': 'add_contact', 'user': {'account_name': self.login},
@@ -202,8 +201,11 @@ class MyWidget(QMainWindow):
                 self.t.join(0.05)
                 data = json.loads(self.response)
                 if data['response'] == 200:
+                    chat = open(f'messages/{self.login};{name}', 'a')
+                    chat.close()
                     self.listWidget.addItem(name)
-                print(data)
+                else:
+                    print(data['error'])
         except Exception as E:
             print(E)
 
@@ -222,7 +224,8 @@ class MyWidget(QMainWindow):
                 contacts = self.getcontacts()['contacts']
                 for i in contacts:
                     self.listWidget.addItem(i)
-            print(data)
+            else:
+                print(data['error'])
         except Exception as E:
             print(E)
 
@@ -244,7 +247,6 @@ class MyWidget(QMainWindow):
                 encoding='utf8'))
             self.t.join(0.05)
             data = self.response
-            print(json.loads(data)['messages'])
             for i in json.loads(data)['messages']:
                 chat = open(f'messages/{self.login};{i["from"]}', 'a')
                 chat.write(f'<font color = #50c878>{i["from"]}: <\\font>\n')
@@ -266,10 +268,11 @@ class MyWidget(QMainWindow):
                 encoding='utf8'))
             self.t.join(0.1)
             data = self.response
-            print(json.loads(data))
             if json.loads(data)['response'] == 200:
                 self.addmessage(self.login, self.textEdit_2.toPlainText())
                 self.textEdit_2.clear()
+            else:
+                print(json.loads(data)['error'])
         except Exception as E:
             print(E)
 
@@ -293,7 +296,7 @@ class MyWidget(QMainWindow):
         color = QColorDialog.getColor()
         if color.isValid():
             self.color1 = color.name()
-        f = open('messages/settings', 'w')
+        f = open('settings', 'w')
         f.writelines(f'{self.color1}\n{self.color2}')
         f.close()
         self.recolor()
@@ -302,7 +305,7 @@ class MyWidget(QMainWindow):
         color = QColorDialog.getColor()
         if color.isValid():
             self.color2 = color.name()
-        f = open('messages/settings', 'w')
+        f = open('settings', 'w')
         f.write(f'{self.color1}\n{self.color2}')
         f.close()
         self.recolor()
@@ -310,7 +313,7 @@ class MyWidget(QMainWindow):
     def default(self):
         self.color1 = '#50c878'
         self.color2 = '#ffffff'
-        f = open('messages/settings', 'w')
+        f = open('settings', 'w')
         f.write('#50c878\n#ffffff')
         f.close()
         self.recolor()
