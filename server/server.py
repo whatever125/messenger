@@ -5,7 +5,10 @@ import threading
 
 
 class Server:
+    """Класс сервера, в котором реализовано подключение, регистрация и
+    авторизация клиентов, работа с контактами и сообщениями"""
     def __init__(self):
+        """Инициализация класса"""
         self.host = 'localhost'
         self.port = 54322
         self.socket = None
@@ -13,28 +16,26 @@ class Server:
         self.logins = {}
 
     def start(self):
+        """Запуск сервера"""
         if self.socket:
-            raise RuntimeError('Already started')
+            raise RuntimeError('Сервер уже запущен')
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((self.host, self.port))
         self.socket.listen(1024)
         self.socket.settimeout(1000000)
         while True:
             client_socket, address = self.socket.accept()
-            t = threading.Thread(target=self.mainloop, args=(client_socket, address))
+            t = threading.Thread(target=self.mainloop, args=(client_socket, ))
             t.start()
 
-    def mainloop(self, client_socket, address):
-        print(f'Client connected: {address}')
-        print()
+    def mainloop(self, client_socket):
+        """Обработка запросов от клиентов сервера"""
         con = sqlite3.connect("messenger.sql")
         cur = con.cursor()
         self.clients.append(client_socket)
         while True:
             try:
                 request = json.loads(client_socket.recv(1024))
-                print(f'Request from {address}:')
-                print(request)
                 if request['action'] == 'check_online':
                     resp = self.check_online(request, client_socket, con, cur)
                 elif request['action'] == 'authorize':
@@ -52,15 +53,9 @@ class Server:
                 elif request['action'] == 'get_messages':
                     resp = self.get_messages(request, client_socket, con, cur)
                 else:
-                    raise RuntimeError(f'Unknown request: {request["action"]}')
-                print(f'Response to {address}:')
-                print(resp)
-                print()
+                    raise RuntimeError(f'Неизвестный запрос: {request["action"]}')
                 client_socket.send(bytes(json.dumps(resp), encoding='utf8'))
             except Exception as e:
-                print(f'Client disconnected: {address}')
-                print(e)
-                print()
                 client_socket.close()
                 self.clients.remove(client_socket)
                 try:
@@ -70,6 +65,7 @@ class Server:
                 break
 
     def check_online(self, request, client_socket, con, cur):
+        """Проверяет, подключен ли пользователь к серверу"""
         resp = {'action': 'response', 'response': 200, 'error': None, 'online': None}
         client_login = request['user']['account_name']
         contact_login = request['user_id']
@@ -86,6 +82,7 @@ class Server:
         return resp
 
     def authorization(self, request, client_socket, con, cur):
+        """Авторизация зарегистрированного пользователя"""
         resp = {'action': 'response', 'response': 200, 'error': None}
         client_login = request['user']['account_name']
         client_digest = request['user']['password']
@@ -102,6 +99,7 @@ class Server:
         return resp
 
     def registration(self, request, con, cur):
+        """Регистрация нового пользователя"""
         resp = {'action': 'response', 'response': 200, 'error': None}
         client_login = request['user']['account_name']
         client_digest = request['user']['password']
@@ -113,6 +111,7 @@ class Server:
         return resp
 
     def add_contact(self, request, client_socket, con, cur):
+        """Добавление клиента в контакты авторизованного пользователя"""
         resp = {'action': 'response', 'response': 200, 'error': None}
         client_login = request['user']['account_name']
         contact_login = request['user_id']
@@ -130,6 +129,7 @@ class Server:
         return resp
 
     def del_contact(self, request, client_socket, con, cur):
+        """Удаление клиента из контактов авторизованного пользователя"""
         resp = {'action': 'response', 'response': 200, 'error': None}
         client_login = request['user']['account_name']
         contact_login = request['user_id']
@@ -147,6 +147,7 @@ class Server:
         return resp
 
     def get_contacts(self, request, client_socket, con, cur):
+        """Возвращает список всех контактов авторизованного пользователя"""
         resp = {'action': 'response', 'response': 200, 'error': None, 'contacts': []}
         client_login = request['user']['account_name']
         if not self.check_authorization(client_socket, client_login):
@@ -161,6 +162,7 @@ class Server:
         return resp
 
     def handle_message(self, request, client_socket, con, cur):
+        """Обработка сообщения от одного пользователя другому"""
         resp = {'action': 'response', 'response': 200, 'error': None}
         client_login = request['user']['account_name']
         contact_login = request['to']
@@ -183,6 +185,8 @@ class Server:
         return resp
 
     def get_messages(self, request, client_socket, con, cur):
+        """Возвращает список сообщений, которые были получены,
+        пока пользователь не был в сети"""
         resp = {'action': 'response', 'response': 200, 'error': None, 'messages': []}
         client_login = request['user']['account_name']
         if not self.check_authorization(client_socket, client_login):
@@ -197,29 +201,35 @@ class Server:
         return resp
 
     def register(self, client_login, client_password, con, cur):
+        """Регистрация нового пользователя в базе данных"""
         cur.execute("""INSERT INTO users(login, password, contacts, messages) 
                     VALUES(?, ?, '[]', '[]')""", (client_login, client_password))
         con.commit()
 
     def check_authorization(self, client_socket, client_login):
+        """Проверяет, авторизован ли пользователь"""
         if client_socket not in self.logins.keys():
             return False
         return self.logins[client_socket] == client_login
 
     def check_existence(self, client_login, con, cur):
+        """Проверяет, существует ли пользователь в базе данных"""
         return bool(cur.execute("""SELECT login FROM users
                     WHERE login = ?""", (client_login,)).fetchall())
 
     def get_password(self, client_login, con, cur):
+        """Получает сохраненный в базе данных пароль пользователя"""
         return cur.execute("""SELECT password FROM users
                     WHERE login = ?""", (client_login,)).fetchone()[0]
 
     def in_contacts(self, client_login, contact_login, con, cur):
+        """Проверяет, есть ли пользователь в контактах"""
         contacts = json.loads(cur.execute("""SELECT contacts FROM users
                     WHERE login = ?""", (client_login,)).fetchone()[0])
         return contact_login in contacts
 
     def add_to_contacts(self, client_login, contact_login, con, cur):
+        """Добавляет пользователя в контакты"""
         contacts = json.loads(cur.execute("""SELECT contacts FROM users
                     WHERE login = ?""", (client_login,)).fetchone()[0])
         contacts.append(contact_login)
@@ -229,6 +239,7 @@ class Server:
         con.commit()
 
     def del_from_contacts(self, client_login, contact_login, con, cur):
+        """Удаляет пользователя из контактов"""
         contacts = json.loads(cur.execute("""SELECT contacts FROM users
                     WHERE login = ?""", (client_login,)).fetchone()[0])
         del contacts[contacts.index(contact_login)]
@@ -238,10 +249,12 @@ class Server:
         con.commit()
 
     def get_client_contacts(self, client_login, con, cur):
+        """Получает список контактов пользователя из базы данных"""
         return cur.execute("""SELECT contacts FROM users
                     WHERE login = ?""", (client_login,)).fetchone()[0]
 
     def add_unread_messages(self, client_login, message, con, cur):
+        """Добавляет непрочитанное сообщение в базу данных"""
         messages = json.loads(cur.execute("""SELECT messages FROM users
                     WHERE login = ?""", (client_login,)).fetchone()[0])
         messages.append(message)
@@ -251,6 +264,7 @@ class Server:
         con.commit()
 
     def get_unread_messages(self, client_login, con, cur):
+        """Получает список непрочитанных сообщений пользователя из базы данных"""
         messages = cur.execute("""SELECT messages FROM users
                             WHERE login = ?""", (client_login,)).fetchone()[0]
         cur.execute("""UPDATE users

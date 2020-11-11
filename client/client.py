@@ -2,9 +2,8 @@ import sys
 import socket
 import json
 import threading
-
-from PyQt5.QtWidgets import QApplication, QMainWindow, QInputDialog, QWidget, QTextEdit, \
-    QColorDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QInputDialog
+from PyQt5.QtWidgets import QWidget, QTextEdit, QColorDialog
 from PyQt5.QtCore import QMargins, Qt, pyqtSignal, QObject
 from interface import *
 
@@ -22,9 +21,10 @@ class SettingsDialog(QWidget, Ui_Form):
         super().__init__()
         self.setupUi(self)
         self.main = main
-        self.pushButton.clicked.connect(main.changecolor1)
-        self.pushButton_3.clicked.connect(main.changecolor2)
+        self.pushButton.clicked.connect(main.change_color1)
+        self.pushButton_3.clicked.connect(main.change_color2)
         self.pushButton_2.clicked.connect(main.default)
+
 
 class Communicate(QObject):
     newMessage = pyqtSignal()
@@ -47,13 +47,13 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             self.bull = True
             self.response = None
             self.c = Communicate()
-            self.c.newMessage.connect(self.shownewmessages)
+            self.c.newMessage.connect(self.show_messages)
             widget = QWidget(self)
             widget.setLayout(self.gridLayout)
             self.setCentralWidget(widget)
             self.ip = 'localhost'
-            self.pushButton.clicked.connect(self.auth)
-            self.pushButton_2.clicked.connect(self.reg)
+            self.pushButton.clicked.connect(self.authorize)
+            self.pushButton_2.clicked.connect(self.register)
             labels = [self.label, self.label_2, self.label_3, self.label_4]
             buttons = [self.pushButton, self.pushButton_2]
             for i in labels:
@@ -70,7 +70,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
     def threading_function(self):
         while True:
             try:
-                self.response = self.client_sock.recv(1024)
+                self.response = self.client_socket.recv(1024)
                 self.responses.append(self.response)
                 data = json.loads(self.response)
                 if data['action'] == 'message':
@@ -78,7 +78,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             except Exception:
                 return None
 
-    def shownewmessages(self):
+    def show_messages(self):
         data = self.responses[-1]
         data = json.loads(data)
         chat = open(f'messages/{self.login};{data["from"]}', 'a')
@@ -87,45 +87,44 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         for i in new_text:
             chat.write(f'<font color = #ffffff>{i}<\\font>\n')
         chat.close()
-        self.openchat()
+        self.open_chat()
 
-
-    def auth(self):
+    def authorize(self):
         try:
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
-            self.client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client_sock.connect((self.ip, 54322))
-            self.client_sock.sendall(bytes(
+            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.client_socket.connect((self.ip, 54322))
+            self.client_socket.sendall(bytes(
                 json.dumps(
                     {"action": "authorize", 'user': {'account_name': login, 'password': password}}),
                 encoding='utf8'))
-            data = self.client_sock.recv(1024)
-            self.error.setText(json.loads(data)['error'])
-            if json.loads(data)['response'] == 200:
+            data = json.loads(self.client_socket.recv(1024))
+            self.error.setText(data['error'])
+            if data['response'] == 200:
                 self.login = login
                 self.password = password
                 self.messenger()
             else:
-                print(json.loads(data)['error'])
+                print(data['error'])
         except Exception as E:
             print(E)
 
-    def reg(self):
+    def register(self):
         try:
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
-            self.client_sock.sendall(bytes(
+            self.client_socket.sendall(bytes(
                 json.dumps(
                     {'action': 'register', 'user': {'account_name': login, 'password': password}}),
                 encoding='utf8'))
-            data = self.client_sock.recv(1024)
-            self.error.setText(json.loads(data)['error'])
-            self.client_sock.close()
-            if json.loads(data)['response'] == 200:
-                self.auth()
+            data = json.loads(self.client_socket.recv(1024))
+            self.error.setText(data['error'])
+            self.client_socket.close()
+            if data['response'] == 200:
+                self.authorize()
             else:
-                print(json.loads(data)['error'])
+                print(data['error'])
         except Exception as E:
             print(E)
 
@@ -142,17 +141,17 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         self.label.setText(self.login)
         self.pushButton.clicked.connect(self.send)
         self.pushButton_5.clicked.connect(self.logout)
-        self.pushButton_2.clicked.connect(self.addcontact)
-        self.pushButton_3.clicked.connect(self.delcontact)
+        self.pushButton_2.clicked.connect(self.add_contact)
+        self.pushButton_3.clicked.connect(self.del_contact)
         self.pushButton_4.clicked.connect(self.settings)
-        self.listWidget.itemSelectionChanged.connect(self.openchat)
-        contacts = self.getcontacts()['contacts']
+        self.listWidget.itemSelectionChanged.connect(self.open_chat)
+        contacts = self.get_contacts()['contacts']
         for i in contacts:
             self.listWidget.addItem(i)
-        self.getmessages()
+        self.get_messages()
 
     def logout(self):
-        self.client_sock.close()
+        self.client_socket.close()
         self.setupRegUi(self)
         labels = [self.label, self.label_2, self.label_3, self.label_4]
         buttons = [self.pushButton, self.pushButton_2]
@@ -173,27 +172,27 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         self.gridLayout.setContentsMargins(QMargins(x, y, x, y))
         self.bull = True
         self.ip = 'localhost'
-        self.pushButton.clicked.connect(self.auth)
-        self.pushButton_2.clicked.connect(self.reg)
+        self.pushButton.clicked.connect(self.authorize)
+        self.pushButton_2.clicked.connect(self.register)
 
-    def getcontacts(self):
+    def get_contacts(self):
         try:
-            self.client_sock.sendall(bytes(
+            self.client_socket.sendall(bytes(
                 json.dumps(
                     {'action': 'get_contacts', 'user': {'account_name': self.login}}),
                 encoding='utf8'))
             self.t.join(0.05)
-            data = self.response
-            return json.loads(data)
+            data = json.loads(self.response)
+            return data
         except Exception as E:
             print(E)
 
-    def addcontact(self):
+    def add_contact(self):
         try:
             name, ok_pressed = QInputDialog.getText(self, "Введите имя контакта",
                                                     "Добавить новый контакт:")
             if ok_pressed:
-                self.client_sock.sendall(bytes(
+                self.client_socket.sendall(bytes(
                     json.dumps(
                         {'action': 'add_contact', 'user': {'account_name': self.login},
                          'user_id': name}),
@@ -209,10 +208,10 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         except Exception as E:
             print(E)
 
-    def delcontact(self):
+    def del_contact(self):
         try:
             name = self.listWidget.selectedItems()[0].text()
-            self.client_sock.sendall(bytes(
+            self.client_socket.sendall(bytes(
                 json.dumps(
                     {'action': 'del_contact', 'user': {'account_name': self.login},
                      'user_id': name}),
@@ -221,7 +220,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             data = json.loads(self.response)
             if data['response'] == 200:
                 self.listWidget.clear()
-                contacts = self.getcontacts()['contacts']
+                contacts = self.get_contacts()['contacts']
                 for i in contacts:
                     self.listWidget.addItem(i)
             else:
@@ -229,7 +228,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         except Exception as E:
             print(E)
 
-    def addmessage(self, sender, text):
+    def add_message(self, sender, text):
         new_text = text.split('\n')
         self.textEdit.append(f'<font color = {self.color1}>{sender}: <\\font>')
         for i in new_text:
@@ -239,9 +238,9 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         for i in new_text:
             chat.write(f'<font color = #ffffff>{i}<\\font>\n')
 
-    def getmessages(self):
+    def get_messages(self):
         try:
-            self.client_sock.sendall(bytes(
+            self.client_socket.sendall(bytes(
                 json.dumps(
                     {'action': 'get_messages', 'user': {'account_name': self.login}}),
                 encoding='utf8'))
@@ -261,22 +260,22 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         try:
             if not self.label_2.text() or not self.textEdit_2.toPlainText():
                 return None
-            self.client_sock.sendall(bytes(
+            self.client_socket.sendall(bytes(
                 json.dumps(
                     {'action': 'send_message', 'user': {'account_name': self.login},
                      'to': self.label_2.text(), 'message': self.textEdit_2.toPlainText()}),
                 encoding='utf8'))
             self.t.join(0.1)
-            data = self.response
-            if json.loads(data)['response'] == 200:
-                self.addmessage(self.login, self.textEdit_2.toPlainText())
+            data = json.loads(self.response)
+            if data['response'] == 200:
+                self.add_message(self.login, self.textEdit_2.toPlainText())
                 self.textEdit_2.clear()
             else:
-                print(json.loads(data)['error'])
+                print(data['error'])
         except Exception as E:
             print(E)
 
-    def openchat(self):
+    def open_chat(self):
         if len(self.listWidget.selectedItems()) == 0:
             return None
         self.textEdit.clear()
@@ -292,7 +291,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         except Exception as E:
             print(E)
 
-    def changecolor1(self):
+    def change_color1(self):
         color = QColorDialog.getColor()
         if color.isValid():
             self.color1 = color.name()
@@ -301,7 +300,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         f.close()
         self.recolor()
 
-    def changecolor2(self):
+    def change_color2(self):
         color = QColorDialog.getColor()
         if color.isValid():
             self.color2 = color.name()
