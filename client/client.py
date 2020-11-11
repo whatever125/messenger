@@ -9,6 +9,8 @@ from interface import *
 
 
 class LTextEdit(QTextEdit):
+    """Унаследованный от QTextEdit виджет, при нажатии на Enter вызывающий функцию, отправляющую
+    сообщение на сервер """
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Return and event.modifiers() != Qt.ShiftModifier:
             self.send()
@@ -17,6 +19,7 @@ class LTextEdit(QTextEdit):
 
 
 class SettingsDialog(QWidget, Ui_Form):
+    """Класс окна настроек, изменяющий два основных цвета дизайна приложения"""
     def __init__(self, main):
         super().__init__()
         self.setupUi(self)
@@ -27,11 +30,14 @@ class SettingsDialog(QWidget, Ui_Form):
 
 
 class Communicate(QObject):
+    """Класс объекта, отправляющий сигналы в приложение при получении новых сообщений"""
     newMessage = pyqtSignal()
 
 
 class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
+    """Класс основного окна мессенджера"""
     def __init__(self):
+        """Инициализация класса"""
         super().__init__()
         self.setupRegUi(self)
         try:
@@ -68,6 +74,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
                                 f"color: {self.color2};")
 
     def threading_function(self):
+        """Поток,получающий все данные от сервера"""
         while True:
             try:
                 self.response = self.client_socket.recv(1024)
@@ -79,6 +86,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
                 return None
 
     def show_messages(self):
+        """Обрабатывает полученные сообщения"""
         data = self.responses[-1]
         data = json.loads(data)
         chat = open(f'messages/{self.login};{data["from"]}', 'a')
@@ -90,6 +98,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         self.open_chat()
 
     def authorize(self):
+        """Отправляет на сервер запрос авторизации"""
         try:
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
@@ -111,6 +120,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             print(E)
 
     def register(self):
+        """Отправляет на сервер запрос регистрации, после чего вызывает функцию авторизации"""
         try:
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
@@ -129,6 +139,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             print(E)
 
     def messenger(self):
+        """Выводит основное окно приложения после успешной авторизации"""
         self.setupUi(self)
         self.bull = False
         widget = QWidget(self)
@@ -151,6 +162,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         self.get_messages()
 
     def logout(self):
+        """Возвращает пользователя в меню регистрации/входа после выхода из аккаунта"""
         self.client_socket.close()
         self.setupRegUi(self)
         labels = [self.label, self.label_2, self.label_3, self.label_4]
@@ -176,6 +188,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         self.pushButton_2.clicked.connect(self.register)
 
     def get_contacts(self):
+        """Получает от сервера контакты пользователя"""
         try:
             self.client_socket.sendall(bytes(
                 json.dumps(
@@ -188,6 +201,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             print(E)
 
     def add_contact(self):
+        """Добавляет нового пользователя в список контактов"""
         try:
             name, ok_pressed = QInputDialog.getText(self, "Введите имя контакта",
                                                     "Добавить новый контакт:")
@@ -209,6 +223,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             print(E)
 
     def del_contact(self):
+        """Удаляет выбранного пользователя из списка контактов"""
         try:
             name = self.listWidget.selectedItems()[0].text()
             self.client_socket.sendall(bytes(
@@ -229,6 +244,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             print(E)
 
     def add_message(self, sender, text):
+        """Выводит на экран сообщение, принимая в качестве аргументов имя отправителя и текст"""
         new_text = text.split('\n')
         self.textEdit.append(f'<font color = {self.color1}>{sender}: <\\font>')
         for i in new_text:
@@ -239,6 +255,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             chat.write(f'<font color = #ffffff>{i}<\\font>\n')
 
     def get_messages(self):
+        """Получает все непрочитанные сообщения от сервера"""
         try:
             self.client_socket.sendall(bytes(
                 json.dumps(
@@ -257,6 +274,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             print(E)
 
     def send(self):
+        """Отправляет сообщение пользователю"""
         try:
             if not self.label_2.text() or not self.textEdit_2.toPlainText():
                 return None
@@ -276,6 +294,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             print(E)
 
     def open_chat(self):
+        """Открывает диалог с выбранным пользователем"""
         if len(self.listWidget.selectedItems()) == 0:
             return None
         self.textEdit.clear()
@@ -292,6 +311,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             print(E)
 
     def change_color1(self):
+        """Меняет основной цвет приложения на выбранный пользователем"""
         color = QColorDialog.getColor()
         if color.isValid():
             self.color1 = color.name()
@@ -301,6 +321,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         self.recolor()
 
     def change_color2(self):
+        """Меняет дополнительный цвет приложения на выбранный пользователем"""
         color = QColorDialog.getColor()
         if color.isValid():
             self.color2 = color.name()
@@ -310,6 +331,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         self.recolor()
 
     def default(self):
+        """Возвращает цветовые настройки в исходное состояние"""
         self.color1 = '#50c878'
         self.color2 = '#ffffff'
         f = open('settings', 'w')
@@ -318,6 +340,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         self.recolor()
 
     def recolor(self):
+        """Изменяет цвета основого окна приложения"""
         labels = [self.label, self.label_2]
         buttons = [self.pushButton, self.pushButton_2, self.pushButton_3, self.pushButton_4,
                    self.pushButton_5]
@@ -333,16 +356,20 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
                             f"color: {self.color2};")
 
     def settings(self):
+        """Открывает меню настроек"""
         self.second_form = SettingsDialog(self)
         self.second_form.show()
 
     def resizeEvent(self, event):
+        """Создаёт отступы от краёв окна входа/регистрации в размере четверти от его длины и
+        ширины"""
         QMainWindow.resizeEvent(self, event)
         if self.bull:
             x, y = self.size().width() // 4, self.size().height() // 4
             self.gridLayout.setContentsMargins(QMargins(x, y, x, y))
 
     def keyPressEvent(self, event):
+        """Отправляет введённое сообщение при нажатии на Enter"""
         try:
             if event.key() == Qt.Key_Return:
                 self.send()
