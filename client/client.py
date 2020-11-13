@@ -124,6 +124,8 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         try:
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
+            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.client_socket.connect((self.ip, 54322))
             self.client_socket.sendall(bytes(
                 json.dumps(
                     {'action': 'register', 'user': {'account_name': login, 'password': password}}),
