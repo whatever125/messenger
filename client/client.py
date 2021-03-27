@@ -7,15 +7,32 @@ from PyQt5.QtWidgets import QWidget, QTextEdit, QColorDialog
 from PyQt5.QtCore import QMargins, Qt, pyqtSignal, QObject
 from interface import *
 
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.fernet import Fernet
 
-class LTextEdit(QTextEdit):
-    """Унаследованный от QTextEdit виджет, при нажатии на Enter вызывающий функцию, отправляющую
-    сообщение на сервер """
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Return and event.modifiers() != Qt.ShiftModifier:
-            self.send()
-        else:
-            QTextEdit.keyPressEvent(self, event)
+
+def read_public(key):
+    public_key = serialization.load_pem_public_key(
+        key,
+        backend=default_backend()
+    )
+    return public_key
+
+
+def encrypt(data, key):
+    public_key = read_public(key)
+    encrypted = public_key.encrypt(
+        data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return encrypted
 
 
 class SettingsDialog(QWidget, Ui_Form):
@@ -58,6 +75,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             widget.setLayout(self.gridLayout)
             self.setCentralWidget(widget)
             self.ip = 'localhost'
+            self.coder = None
             self.pushButton.clicked.connect(self.authorize)
             self.pushButton_2.clicked.connect(self.register)
             labels = [self.label, self.label_2, self.label_3, self.label_4]
@@ -77,7 +95,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         """Поток,получающий все данные от сервера"""
         while True:
             try:
-                self.response = self.client_socket.recv(1024)
+                self.response = self.coder.decrypt(self.client_socket.recv(1024))
                 self.responses.append(self.response)
                 data = json.loads(self.response)
                 if data['action'] == 'message':
@@ -104,15 +122,17 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             password = self.lineEdit_2.text()
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect((self.ip, 54322))
-            self.client_socket.sendall(bytes(
+
+            self.set_keys()
+
+            self.client_socket.sendall(self.coder.encrypt(bytes(
                 json.dumps(
                     {"action": "authorize", 'user': {'account_name': login, 'password': password}}),
-                encoding='utf8'))
-            data = json.loads(self.client_socket.recv(1024))
+                encoding='utf8')))
+            data = json.loads(self.coder.decrypt(self.client_socket.recv(1024)))
             self.error.setText(data['error'])
             if data['response'] == 200:
                 self.login = login
-                self.password = password
                 self.messenger()
             else:
                 print(data['error'])
@@ -126,11 +146,14 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             password = self.lineEdit_2.text()
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect((self.ip, 54322))
-            self.client_socket.sendall(bytes(
+
+            self.set_keys()
+
+            self.client_socket.sendall(self.coder.encrypt(bytes(
                 json.dumps(
                     {'action': 'register', 'user': {'account_name': login, 'password': password}}),
-                encoding='utf8'))
-            data = json.loads(self.client_socket.recv(1024))
+                encoding='utf8')))
+            data = json.loads(self.coder.decrypt(self.client_socket.recv(1024)))
             self.error.setText(data['error'])
             self.client_socket.close()
             if data['response'] == 200:
@@ -139,6 +162,13 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
                 print(data['error'])
         except Exception as E:
             print(E)
+
+    def set_keys(self):
+        public_key = self.client_socket.recv(1024)
+        key = Fernet.generate_key()
+        self.coder = Fernet(key)
+        key_data = encrypt(key, public_key)
+        self.client_socket.sendall(key_data)
 
     def messenger(self):
         """Выводит основное окно приложения после успешной авторизации"""
@@ -161,10 +191,18 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         contacts = self.get_contacts()['contacts']
         for i in contacts:
             self.listWidget.addItem(i)
-        self.get_messages()
 
     def logout(self):
         """Возвращает пользователя в меню регистрации/входа после выхода из аккаунта"""
+        try:
+            self.client_socket.sendall(self.coder.encrypt(bytes(
+                json.dumps(
+                    {'action': 'sign_out', 'user': {'account_name': self.login}}),
+                encoding='utf8')))
+            self.t.join(0.05)
+            data = json.loads(self.response)
+        except Exception as E:
+            print(E)
         self.client_socket.close()
         self.setupRegUi(self)
         labels = [self.label, self.label_2, self.label_3, self.label_4]
@@ -192,10 +230,10 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
     def get_contacts(self):
         """Получает от сервера контакты пользователя"""
         try:
-            self.client_socket.sendall(bytes(
+            self.client_socket.sendall(self.coder.encrypt(bytes(
                 json.dumps(
                     {'action': 'get_contacts', 'user': {'account_name': self.login}}),
-                encoding='utf8'))
+                encoding='utf8')))
             self.t.join(0.05)
             data = json.loads(self.response)
             return data
@@ -208,15 +246,15 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             name, ok_pressed = QInputDialog.getText(self, "Введите имя контакта",
                                                     "Добавить новый контакт:")
             if ok_pressed:
-                self.client_socket.sendall(bytes(
+                self.client_socket.sendall(self.coder.encrypt(bytes(
                     json.dumps(
                         {'action': 'add_contact', 'user': {'account_name': self.login},
                          'user_id': name}),
-                    encoding='utf8'))
+                    encoding='utf8')))
                 self.t.join(0.05)
                 data = json.loads(self.response)
                 if data['response'] == 200:
-                    chat = open(f'messages/{self.login};{name}', 'a')
+                    chat = open(f'messages/{self.login};{name}', 'w')
                     chat.close()
                     self.listWidget.addItem(name)
                 else:
@@ -228,11 +266,11 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         """Удаляет выбранного пользователя из списка контактов"""
         try:
             name = self.listWidget.selectedItems()[0].text()
-            self.client_socket.sendall(bytes(
+            self.client_socket.sendall(self.coder.encrypt(bytes(
                 json.dumps(
                     {'action': 'del_contact', 'user': {'account_name': self.login},
                      'user_id': name}),
-                encoding='utf8'))
+                encoding='utf8')))
             self.t.join(0.05)
             data = json.loads(self.response)
             if data['response'] == 200:
@@ -256,35 +294,16 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         for i in new_text:
             chat.write(f'<font color = #ffffff>{i}<\\font>\n')
 
-    def get_messages(self):
-        """Получает все непрочитанные сообщения от сервера"""
-        try:
-            self.client_socket.sendall(bytes(
-                json.dumps(
-                    {'action': 'get_messages', 'user': {'account_name': self.login}}),
-                encoding='utf8'))
-            self.t.join(0.05)
-            data = self.response
-            for i in json.loads(data)['messages']:
-                chat = open(f'messages/{self.login};{i["from"]}', 'a')
-                chat.write(f'<font color = #50c878>{i["from"]}: <\\font>\n')
-                new_text = i['message'].split('\n')
-                for j in new_text:
-                    chat.write(f'<font color = #ffffff>{j}<\\font>\n')
-                chat.close()
-        except Exception as E:
-            print(E)
-
     def send(self):
         """Отправляет сообщение пользователю"""
         try:
             if not self.label_2.text() or not self.textEdit_2.toPlainText():
                 return None
-            self.client_socket.sendall(bytes(
+            self.client_socket.sendall(self.coder.encrypt(bytes(
                 json.dumps(
                     {'action': 'send_message', 'user': {'account_name': self.login},
                      'to': self.label_2.text(), 'message': self.textEdit_2.toPlainText()}),
-                encoding='utf8'))
+                encoding='utf8')))
             self.t.join(0.1)
             data = json.loads(self.response)
             if data['response'] == 200:

@@ -2,6 +2,61 @@ import json
 import sqlite3
 import socket
 import threading
+from passlib.context import CryptContext
+
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.fernet import Fernet
+
+pwd_context = CryptContext(
+        schemes=["pbkdf2_sha256"],
+        default="pbkdf2_sha256",
+        pbkdf2_sha256__default_rounds=30000
+)
+
+
+def generate_keys():
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+    public_key = private_key.public_key()
+    serial_private = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    serial_pub = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return serial_private, serial_pub
+
+
+def read_private(key):
+    private_key = serialization.load_pem_private_key(
+        key,
+        password=None,
+        backend=default_backend()
+    )
+    return private_key
+
+
+def decrypt(data, key):
+    private_key = read_private(key)
+    decrypted = private_key.decrypt(
+        data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return decrypted
 
 
 class Server:
@@ -14,6 +69,7 @@ class Server:
         self.socket = None
         self.clients = []
         self.logins = {}
+        self.coders = {}
 
     def start(self):
         """Запуск сервера"""
@@ -33,15 +89,25 @@ class Server:
         con = sqlite3.connect("messenger.sql")
         cur = con.cursor()
         self.clients.append(client_socket)
+
+        serial_private, serial_pub = generate_keys()
+        client_socket.send(serial_pub)
+        key_data = client_socket.recv(1024)
+        key = decrypt(key_data, serial_private)
+        coder = Fernet(key)
+        self.coders[client_socket] = coder
+
         while True:
             try:
-                request = json.loads(client_socket.recv(1024))
+                request = json.loads(coder.decrypt(client_socket.recv(1024)))
                 if request['action'] == 'check_online':
                     resp = self.check_online(request, client_socket, con, cur)
                 elif request['action'] == 'authorize':
                     resp = self.authorization(request, client_socket, con, cur)
                 elif request['action'] == 'register':
                     resp = self.registration(request, con, cur)
+                elif request['action'] == 'sign_out':
+                    resp = self.sign_out(request, client_socket, con, cur)
                 elif request['action'] == 'add_contact':
                     resp = self.add_contact(request, client_socket, con, cur)
                 elif request['action'] == 'del_contact':
@@ -50,11 +116,9 @@ class Server:
                     resp = self.get_contacts(request, client_socket, con, cur)
                 elif request['action'] == 'send_message':
                     resp = self.handle_message(request, client_socket, con, cur)
-                elif request['action'] == 'get_messages':
-                    resp = self.get_messages(request, client_socket, con, cur)
                 else:
                     raise RuntimeError(f'Неизвестный запрос: {request["action"]}')
-                client_socket.send(bytes(json.dumps(resp), encoding='utf8'))
+                client_socket.send(coder.encrypt(bytes(json.dumps(resp), encoding='utf8')))
             except Exception as e:
                 client_socket.close()
                 self.clients.remove(client_socket)
@@ -91,7 +155,7 @@ class Server:
             resp['error'] = f'No such client: {client_login}'
         else:
             client_hash = self.get_password(client_login, con, cur)
-            if client_hash != client_digest:
+            if not pwd_context.verify(client_digest, client_hash):
                 resp['response'] = 403
                 resp['error'] = 'Access denied'
             else:
@@ -107,7 +171,24 @@ class Server:
             resp['response'] = 400
             resp['error'] = f'Login is already taken: {client_login}'
         else:
-            self.register(client_login, client_digest, con, cur)
+            self.register(client_login, pwd_context.hash(client_digest), con, cur)
+        return resp
+
+    def sign_out(self, request, client_socket, con, cur):
+        """Производит выход пользователя из сети"""
+        resp = {'action': 'response', 'response': 200, 'error': None}
+        client_login = request['user']['account_name']
+        if not self.check_existence(client_login, con, cur):
+            resp['response'] = 400
+            resp['error'] = f'No such client: {client_login}'
+        elif not self.check_authorization(client_socket, client_login):
+            resp['response'] = 403
+            resp['error'] = 'Access denied'
+        elif client_login in self.logins.values():
+            del self.logins[client_socket]
+        elif client_login not in self.logins.values():
+            resp['response'] = 400
+            resp['error'] = f'{client_login} is offline'
         return resp
 
     def add_contact(self, request, client_socket, con, cur):
@@ -177,27 +258,11 @@ class Server:
             message['message'] = request['message']
             for socket, login in self.logins.items():
                 if login == contact_login:
-                    socket.send(bytes(json.dumps(message), encoding='utf8'))
+                    socket.send(self.coders[socket].encrypt(bytes(json.dumps(message), encoding='utf8')))
                     break
         elif contact_login not in self.logins.values():
-            message['message'] = request['message']
-            self.add_unread_messages(contact_login, message, con, cur)
-        return resp
-
-    def get_messages(self, request, client_socket, con, cur):
-        """Возвращает список сообщений, которые были получены,
-        пока пользователь не был в сети"""
-        resp = {'action': 'response', 'response': 200, 'error': None, 'messages': []}
-        client_login = request['user']['account_name']
-        if not self.check_authorization(client_socket, client_login):
-            resp['response'] = 403
-            resp['error'] = 'Access denied'
-        elif not self.check_existence(client_login, con, cur):
             resp['response'] = 400
-            resp['error'] = f'No such client: {client_login}'
-        else:
-            client_contacts = json.loads(self.get_unread_messages(client_login, con, cur))
-            resp['messages'] = client_contacts
+            resp['error'] = f'{contact_login} is offline'
         return resp
 
     def register(self, client_login, client_password, con, cur):
@@ -252,26 +317,6 @@ class Server:
         """Получает список контактов пользователя из базы данных"""
         return cur.execute("""SELECT contacts FROM users
                     WHERE login = ?""", (client_login,)).fetchone()[0]
-
-    def add_unread_messages(self, client_login, message, con, cur):
-        """Добавляет непрочитанное сообщение в базу данных"""
-        messages = json.loads(cur.execute("""SELECT messages FROM users
-                    WHERE login = ?""", (client_login,)).fetchone()[0])
-        messages.append(message)
-        cur.execute("""UPDATE users
-                    SET messages = ?
-                    WHERE login = ?""", (json.dumps(messages), client_login))
-        con.commit()
-
-    def get_unread_messages(self, client_login, con, cur):
-        """Получает список непрочитанных сообщений пользователя из базы данных"""
-        messages = cur.execute("""SELECT messages FROM users
-                            WHERE login = ?""", (client_login,)).fetchone()[0]
-        cur.execute("""UPDATE users
-                    SET messages = '[]'
-                    WHERE login = ?""", (client_login,))
-        con.commit()
-        return messages
 
 
 if __name__ == '__main__':
