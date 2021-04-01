@@ -5,7 +5,8 @@ import threading
 from PyQt5.QtWidgets import QApplication, QMainWindow, QInputDialog
 from PyQt5.QtWidgets import QWidget, QTextEdit, QColorDialog
 from PyQt5.QtCore import QMargins, Qt, pyqtSignal, QObject
-from interface import *
+# from interface import *
+from PyQt5 import uic
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
@@ -35,15 +36,57 @@ def encrypt(data, key):
     return encrypted
 
 
-class SettingsDialog(QWidget, Ui_Form):
+class SettingsDialog(QWidget):
     """Класс окна настроек, изменяющий два основных цвета дизайна приложения"""
     def __init__(self, main):
         super().__init__()
-        self.setupUi(self)
+        # self.setupUi(self)
+        uic.loadUi('dialog.ui', self)
+        try:
+            f = open('settings', 'r').readlines()
+            self.color1 = f[0]
+            self.color2 = f[1]
+        except Exception:
+            self.color1 = '#50c878'
+            self.color2 = '#ffffff'
+        finally:
+            self.recolor()
         self.main = main
         self.pushButton.clicked.connect(main.change_color1)
-        self.pushButton_3.clicked.connect(main.change_color2)
+        self.pushButton.clicked.connect(self.change_color1)
         self.pushButton_2.clicked.connect(main.default)
+        self.pushButton_2.clicked.connect(self.default)
+        self.pushButton_3.clicked.connect(main.change_color2)
+        self.pushButton_3.clicked.connect(self.change_color2)
+
+    def change_color1(self):
+        """Меняет основной цвет приложения на выбранный пользователем"""
+        self.color1 = self.main.color1
+        self.recolor()
+
+    def change_color2(self):
+        """Меняет дополнительный цвет приложения на выбранный пользователем"""
+        self.color2 = self.main.color2
+        self.recolor()
+
+    def recolor(self):
+        """Изменяет цвета основого окна приложения"""
+        self.label.setStyleSheet(f'color:{self.color1};')
+        buttons = [self.pushButton, self.pushButton_2, self.pushButton_3]
+        for i in buttons:
+            i.setStyleSheet(f"    background-color:{self.color1};\n"
+                            "     border-style: outset;\n"
+                            "     border-width: 2px;\n"
+                            "     border-radius: 10px;\n"
+                            "     border-color: beige;\n"
+                            "     padding: 6px;\n"
+                            f"color: {self.color2};")
+
+    def default(self):
+        """Возвращает цветовые настройки в исходное состояние"""
+        self.color1 = '#50c878'
+        self.color2 = '#ffffff'
+        self.recolor()
 
 
 class Communicate(QObject):
@@ -51,12 +94,13 @@ class Communicate(QObject):
     newMessage = pyqtSignal()
 
 
-class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
+class MyWidget(QMainWindow):
     """Класс основного окна мессенджера"""
     def __init__(self):
         """Инициализация класса"""
         super().__init__()
-        self.setupRegUi(self)
+        # self.setupRegUi(self)
+        uic.loadUi('reg.ui', self)
         try:
             f = open('settings', 'r').readlines()
             self.color1 = f[0]
@@ -121,7 +165,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client_socket.connect((self.ip, 54322))
+            self.client_socket.connect((self.ip, 54321))
 
             self.set_keys()
 
@@ -134,8 +178,6 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             if data['response'] == 200:
                 self.login = login
                 self.messenger()
-            else:
-                print(data['error'])
         except Exception as E:
             print(E)
 
@@ -145,7 +187,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client_socket.connect((self.ip, 54322))
+            self.client_socket.connect((self.ip, 54321))
 
             self.set_keys()
 
@@ -158,8 +200,6 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             self.client_socket.close()
             if data['response'] == 200:
                 self.authorize()
-            else:
-                print(data['error'])
         except Exception as E:
             print(E)
 
@@ -172,7 +212,8 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
 
     def messenger(self):
         """Выводит основное окно приложения после успешной авторизации"""
-        self.setupUi(self)
+        # self.setupUi(self)
+        uic.loadUi('messenger.ui', self)
         self.bull = False
         widget = QWidget(self)
         widget.setLayout(self.gridLayout)
@@ -204,19 +245,9 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         except Exception as E:
             print(E)
         self.client_socket.close()
-        self.setupRegUi(self)
-        labels = [self.label, self.label_2, self.label_3, self.label_4]
-        buttons = [self.pushButton, self.pushButton_2]
-        for i in labels:
-            i.setStyleSheet(f'color:{self.color1};')
-        for i in buttons:
-            i.setStyleSheet(f"    background-color:{self.color1};\n"
-                            "     border-style: outset;\n"
-                            "     border-width: 2px;\n"
-                            "     border-radius: 10px;\n"
-                            "     border-color: beige;\n"
-                            "     padding: 6px;\n"
-                            f"color: {self.color2};")
+        # self.setupRegUi(self)
+        uic.loadUi('reg.ui', self)
+        self.recolor()
         widget = QWidget(self)
         widget.setLayout(self.gridLayout)
         self.setCentralWidget(widget)
@@ -257,8 +288,6 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
                     chat = open(f'messages/{self.login};{name}', 'w')
                     chat.close()
                     self.listWidget.addItem(name)
-                else:
-                    print(data['error'])
         except Exception as E:
             print(E)
 
@@ -278,8 +307,6 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
                 contacts = self.get_contacts()['contacts']
                 for i in contacts:
                     self.listWidget.addItem(i)
-            else:
-                print(data['error'])
         except Exception as E:
             print(E)
 
@@ -309,8 +336,6 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             if data['response'] == 200:
                 self.add_message(self.login, self.textEdit_2.toPlainText())
                 self.textEdit_2.clear()
-            else:
-                print(data['error'])
         except Exception as E:
             print(E)
 

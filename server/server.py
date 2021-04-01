@@ -19,6 +19,7 @@ pwd_context = CryptContext(
 
 
 def generate_keys():
+    """Генерирует приватный и публичный ключи"""
     private_key = rsa.generate_private_key(
         public_exponent=65537,
         key_size=2048,
@@ -37,16 +38,8 @@ def generate_keys():
     return serial_private, serial_pub
 
 
-def read_private(key):
-    private_key = serialization.load_pem_private_key(
-        key,
-        password=None,
-        backend=default_backend()
-    )
-    return private_key
-
-
 def decrypt(data, key):
+    """Дешифрует сообщение, закодированное публичным ключом"""
     private_key = read_private(key)
     decrypted = private_key.decrypt(
         data,
@@ -59,13 +52,23 @@ def decrypt(data, key):
     return decrypted
 
 
+def read_private(key):
+    """Читает приватный ключ"""
+    private_key = serialization.load_pem_private_key(
+        key,
+        password=None,
+        backend=default_backend()
+    )
+    return private_key
+
+
 class Server:
     """Класс сервера, в котором реализовано подключение, регистрация и
     авторизация клиентов, работа с контактами и сообщениями"""
     def __init__(self):
         """Инициализация класса"""
         self.host = 'localhost'
-        self.port = 54322
+        self.port = 54321
         self.socket = None
         self.clients = []
         self.logins = {}
@@ -75,6 +78,7 @@ class Server:
         """Запуск сервера"""
         if self.socket:
             raise RuntimeError('Сервер уже запущен')
+        print(f'Сервер запущен по адресу {self.host}:{self.port}')
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((self.host, self.port))
         self.socket.listen(1024)
@@ -120,6 +124,7 @@ class Server:
                     raise RuntimeError(f'Неизвестный запрос: {request["action"]}')
                 client_socket.send(coder.encrypt(bytes(json.dumps(resp), encoding='utf8')))
             except Exception as e:
+                print(e)
                 client_socket.close()
                 self.clients.remove(client_socket)
                 try:
@@ -267,8 +272,8 @@ class Server:
 
     def register(self, client_login, client_password, con, cur):
         """Регистрация нового пользователя в базе данных"""
-        cur.execute("""INSERT INTO users(login, password, contacts, messages) 
-                    VALUES(?, ?, '[]', '[]')""", (client_login, client_password))
+        cur.execute("""INSERT INTO users(login, password, contacts) 
+                    VALUES(?, ?, '[]')""", (client_login, client_password))
         con.commit()
 
     def check_authorization(self, client_socket, client_login):
