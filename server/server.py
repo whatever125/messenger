@@ -1,4 +1,5 @@
 import json
+import zlib
 import sqlite3
 import socket
 import threading
@@ -95,15 +96,15 @@ class Server:
         self.clients.append(client_socket)
 
         serial_private, serial_pub = generate_keys()
-        client_socket.send(serial_pub)
-        key_data = client_socket.recv(1024)
+        client_socket.send(zlib.compress(serial_pub))
+        key_data = zlib.decompress(client_socket.recv(1024))
         key = decrypt(key_data, serial_private)
         coder = Fernet(key)
         self.coders[client_socket] = coder
 
         while True:
             try:
-                request = json.loads(coder.decrypt(client_socket.recv(1024)))
+                request = json.loads(coder.decrypt(zlib.decompress(client_socket.recv(1024))))
                 if request['action'] == 'check_online':
                     resp = self.check_online(request, client_socket, con, cur)
                 elif request['action'] == 'authorize':
@@ -122,9 +123,8 @@ class Server:
                     resp = self.handle_message(request, client_socket, con, cur)
                 else:
                     raise RuntimeError(f'Неизвестный запрос: {request["action"]}')
-                client_socket.send(coder.encrypt(bytes(json.dumps(resp), encoding='utf8')))
-            except Exception as e:
-                print(e)
+                client_socket.send(zlib.compress(coder.encrypt(bytes(json.dumps(resp), encoding='utf8'))))
+            except ConnectionResetError:
                 client_socket.close()
                 self.clients.remove(client_socket)
                 try:
@@ -132,6 +132,8 @@ class Server:
                 except Exception:
                     pass
                 break
+            except Exception as e:
+                print(e)
 
     def check_online(self, request, client_socket, con, cur):
         """Проверяет, подключен ли пользователь к серверу"""
@@ -263,7 +265,7 @@ class Server:
             message['message'] = request['message']
             for socket, login in self.logins.items():
                 if login == contact_login:
-                    socket.send(self.coders[socket].encrypt(bytes(json.dumps(message), encoding='utf8')))
+                    socket.send(zlib.compress(self.coders[socket].encrypt(bytes(json.dumps(message), encoding='utf8'))))
                     break
         elif contact_login not in self.logins.values():
             resp['response'] = 400
