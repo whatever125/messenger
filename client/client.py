@@ -1,32 +1,91 @@
 import sys
 import socket
 import json
+import zlib
 import threading
 from PyQt5.QtWidgets import QApplication, QMainWindow, QInputDialog
 from PyQt5.QtWidgets import QWidget, QTextEdit, QColorDialog
 from PyQt5.QtCore import QMargins, Qt, pyqtSignal, QObject
-from interface import *
+from PyQt5 import uic
+
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.fernet import Fernet
 
 
-class LTextEdit(QTextEdit):
-    """Унаследованный от QTextEdit виджет, при нажатии на Enter вызывающий функцию, отправляющую
-    сообщение на сервер """
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Return and event.modifiers() != Qt.ShiftModifier:
-            self.send()
-        else:
-            QTextEdit.keyPressEvent(self, event)
+def read_public(key):
+    public_key = serialization.load_pem_public_key(
+        key,
+        backend=default_backend()
+    )
+    return public_key
 
 
-class SettingsDialog(QWidget, Ui_Form):
+def encrypt(data, key):
+    public_key = read_public(key)
+    encrypted = public_key.encrypt(
+        data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return encrypted
+
+
+class SettingsDialog(QWidget):
     """Класс окна настроек, изменяющий два основных цвета дизайна приложения"""
     def __init__(self, main):
         super().__init__()
-        self.setupUi(self)
+        uic.loadUi('dialog.ui', self)
+        try:
+            f = open('settings', 'r').readlines()
+            self.color1 = f[0]
+            self.color2 = f[1]
+        except Exception:
+            self.color1 = '#50c878'
+            self.color2 = '#ffffff'
+        finally:
+            self.recolor()
         self.main = main
         self.pushButton.clicked.connect(main.change_color1)
-        self.pushButton_3.clicked.connect(main.change_color2)
+        self.pushButton.clicked.connect(self.change_color1)
         self.pushButton_2.clicked.connect(main.default)
+        self.pushButton_2.clicked.connect(self.default)
+        self.pushButton_3.clicked.connect(main.change_color2)
+        self.pushButton_3.clicked.connect(self.change_color2)
+
+    def change_color1(self):
+        """Меняет основной цвет приложения на выбранный пользователем"""
+        self.color1 = self.main.color1
+        self.recolor()
+
+    def change_color2(self):
+        """Меняет дополнительный цвет приложения на выбранный пользователем"""
+        self.color2 = self.main.color2
+        self.recolor()
+
+    def recolor(self):
+        """Изменяет цвета основого окна приложения"""
+        self.label.setStyleSheet(f'color:{self.color1};')
+        buttons = [self.pushButton, self.pushButton_2, self.pushButton_3]
+        for i in buttons:
+            i.setStyleSheet(f"    background-color:{self.color1};\n"
+                            "     border-style: outset;\n"
+                            "     border-width: 2px;\n"
+                            "     border-radius: 10px;\n"
+                            "     border-color: beige;\n"
+                            "     padding: 6px;\n"
+                            f"color: {self.color2};")
+
+    def default(self):
+        """Возвращает цветовые настройки в исходное состояние"""
+        self.color1 = '#50c878'
+        self.color2 = '#ffffff'
+        self.recolor()
 
 
 class Communicate(QObject):
@@ -34,12 +93,12 @@ class Communicate(QObject):
     newMessage = pyqtSignal()
 
 
-class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
+class MyWidget(QMainWindow):
     """Класс основного окна мессенджера"""
     def __init__(self):
         """Инициализация класса"""
         super().__init__()
-        self.setupRegUi(self)
+        uic.loadUi('reg.ui', self)
         try:
             f = open('settings', 'r').readlines()
             self.color1 = f[0]
@@ -58,6 +117,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             widget.setLayout(self.gridLayout)
             self.setCentralWidget(widget)
             self.ip = 'localhost'
+            self.coder = None
             self.pushButton.clicked.connect(self.authorize)
             self.pushButton_2.clicked.connect(self.register)
             labels = [self.label, self.label_2, self.label_3, self.label_4]
@@ -77,7 +137,7 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         """Поток,получающий все данные от сервера"""
         while True:
             try:
-                self.response = self.client_socket.recv(1024)
+                self.response = self.coder.decrypt(zlib.decompress(self.client_socket.recv(1024)))
                 self.responses.append(self.response)
                 data = json.loads(self.response)
                 if data['action'] == 'message':
@@ -103,19 +163,19 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client_socket.connect((self.ip, 54322))
-            self.client_socket.sendall(bytes(
+            self.client_socket.connect((self.ip, 54321))
+
+            self.set_keys()
+
+            self.client_socket.sendall(zlib.compress(self.coder.encrypt(bytes(
                 json.dumps(
                     {"action": "authorize", 'user': {'account_name': login, 'password': password}}),
-                encoding='utf8'))
-            data = json.loads(self.client_socket.recv(1024))
+                encoding='utf8'))))
+            data = json.loads(self.coder.decrypt(zlib.decompress(self.client_socket.recv(1024))))
             self.error.setText(data['error'])
             if data['response'] == 200:
                 self.login = login
-                self.password = password
                 self.messenger()
-            else:
-                print(data['error'])
         except Exception as E:
             print(E)
 
@@ -125,28 +185,43 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
             login = self.lineEdit.text()
             password = self.lineEdit_2.text()
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client_socket.connect((self.ip, 54322))
-            self.client_socket.sendall(bytes(
+            self.client_socket.connect((self.ip, 54321))
+
+            self.set_keys()
+
+            self.client_socket.sendall(zlib.compress(self.coder.encrypt(bytes(
                 json.dumps(
                     {'action': 'register', 'user': {'account_name': login, 'password': password}}),
-                encoding='utf8'))
-            data = json.loads(self.client_socket.recv(1024))
+                encoding='utf8'))))
+            data = json.loads(self.coder.decrypt(zlib.decompress(self.client_socket.recv(1024))))
             self.error.setText(data['error'])
             self.client_socket.close()
             if data['response'] == 200:
                 self.authorize()
-            else:
-                print(data['error'])
         except Exception as E:
             print(E)
 
+    def set_keys(self):
+        """Генерирует ключ для кодирования сообщений"""
+        public_key = zlib.decompress(self.client_socket.recv(1024))
+        key = Fernet.generate_key()
+        self.coder = Fernet(key)
+        key_data = encrypt(key, public_key)
+        self.client_socket.sendall(zlib.compress(key_data))
+
     def messenger(self):
         """Выводит основное окно приложения после успешной авторизации"""
-        self.setupUi(self)
+        width = self.size().width()
+        height = self.size().height()
+        is_full_screen = self.isFullScreen()
+        uic.loadUi('messenger.ui', self)
         self.bull = False
         widget = QWidget(self)
         widget.setLayout(self.gridLayout)
         self.setCentralWidget(widget)
+        self.resize(width, height)
+        if is_full_screen:
+            self.showFullScreen()
         self.t = threading.Thread(target=self.threading_function, daemon=True)
         self.t.start()
         self.responses = []
@@ -161,41 +236,42 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         contacts = self.get_contacts()['contacts']
         for i in contacts:
             self.listWidget.addItem(i)
-        self.get_messages()
 
     def logout(self):
         """Возвращает пользователя в меню регистрации/входа после выхода из аккаунта"""
+        try:
+            self.client_socket.sendall(zlib.compress(self.coder.encrypt(bytes(
+                json.dumps(
+                    {'action': 'sign_out', 'user': {'account_name': self.login}}),
+                encoding='utf8'))))
+            self.t.join(0.05)
+        except Exception as E:
+            print(E)
         self.client_socket.close()
-        self.setupRegUi(self)
-        labels = [self.label, self.label_2, self.label_3, self.label_4]
-        buttons = [self.pushButton, self.pushButton_2]
-        for i in labels:
-            i.setStyleSheet(f'color:{self.color1};')
-        for i in buttons:
-            i.setStyleSheet(f"    background-color:{self.color1};\n"
-                            "     border-style: outset;\n"
-                            "     border-width: 2px;\n"
-                            "     border-radius: 10px;\n"
-                            "     border-color: beige;\n"
-                            "     padding: 6px;\n"
-                            f"color: {self.color2};")
+        width = self.size().width()
+        height = self.size().height()
+        is_full_screen = self.isFullScreen()
+        uic.loadUi('reg.ui', self)
+        self.recolor()
         widget = QWidget(self)
         widget.setLayout(self.gridLayout)
         self.setCentralWidget(widget)
+        self.resize(width, height)
+        if is_full_screen:
+            self.showFullScreen()
         x, y = self.size().width() // 4, self.size().height() // 4
         self.gridLayout.setContentsMargins(QMargins(x, y, x, y))
         self.bull = True
-        self.ip = 'localhost'
         self.pushButton.clicked.connect(self.authorize)
         self.pushButton_2.clicked.connect(self.register)
 
     def get_contacts(self):
         """Получает от сервера контакты пользователя"""
         try:
-            self.client_socket.sendall(bytes(
+            self.client_socket.sendall(zlib.compress(self.coder.encrypt(bytes(
                 json.dumps(
                     {'action': 'get_contacts', 'user': {'account_name': self.login}}),
-                encoding='utf8'))
+                encoding='utf8'))))
             self.t.join(0.05)
             data = json.loads(self.response)
             return data
@@ -207,20 +283,19 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         try:
             name, ok_pressed = QInputDialog.getText(self, "Введите имя контакта",
                                                     "Добавить новый контакт:")
-            if ok_pressed:
-                self.client_socket.sendall(bytes(
+            if ok_pressed and self.login != name:
+                self.client_socket.sendall(zlib.compress(self.coder.encrypt(bytes(
                     json.dumps(
                         {'action': 'add_contact', 'user': {'account_name': self.login},
                          'user_id': name}),
-                    encoding='utf8'))
+                    encoding='utf8'))))
                 self.t.join(0.05)
                 data = json.loads(self.response)
                 if data['response'] == 200:
-                    chat = open(f'messages/{self.login};{name}', 'a')
+                    chat = open(f'messages/{self.login};{name}', 'w')
                     chat.close()
                     self.listWidget.addItem(name)
-                else:
-                    print(data['error'])
+                self.error.setText(data['error'])
         except Exception as E:
             print(E)
 
@@ -228,20 +303,22 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         """Удаляет выбранного пользователя из списка контактов"""
         try:
             name = self.listWidget.selectedItems()[0].text()
-            self.client_socket.sendall(bytes(
+            self.client_socket.sendall(zlib.compress(self.coder.encrypt(bytes(
                 json.dumps(
                     {'action': 'del_contact', 'user': {'account_name': self.login},
                      'user_id': name}),
-                encoding='utf8'))
-            self.t.join(0.05)
+                encoding='utf8'))))
+            self.t.join(0.1)
             data = json.loads(self.response)
             if data['response'] == 200:
+                if self.label_2.text() == self.listWidget.selectedItems()[0].text():
+                    self.label_2.setText('')
+                    self.textEdit.clear()
                 self.listWidget.clear()
                 contacts = self.get_contacts()['contacts']
                 for i in contacts:
                     self.listWidget.addItem(i)
-            else:
-                print(data['error'])
+            self.error.setText(data['error'])
         except Exception as E:
             print(E)
 
@@ -256,42 +333,22 @@ class MyWidget(QMainWindow, Ui_MainWindow, Ui_RegWindow):
         for i in new_text:
             chat.write(f'<font color = #ffffff>{i}<\\font>\n')
 
-    def get_messages(self):
-        """Получает все непрочитанные сообщения от сервера"""
-        try:
-            self.client_socket.sendall(bytes(
-                json.dumps(
-                    {'action': 'get_messages', 'user': {'account_name': self.login}}),
-                encoding='utf8'))
-            self.t.join(0.05)
-            data = self.response
-            for i in json.loads(data)['messages']:
-                chat = open(f'messages/{self.login};{i["from"]}', 'a')
-                chat.write(f'<font color = #50c878>{i["from"]}: <\\font>\n')
-                new_text = i['message'].split('\n')
-                for j in new_text:
-                    chat.write(f'<font color = #ffffff>{j}<\\font>\n')
-                chat.close()
-        except Exception as E:
-            print(E)
-
     def send(self):
         """Отправляет сообщение пользователю"""
         try:
             if not self.label_2.text() or not self.textEdit_2.toPlainText():
                 return None
-            self.client_socket.sendall(bytes(
+            self.client_socket.sendall(zlib.compress(self.coder.encrypt(bytes(
                 json.dumps(
                     {'action': 'send_message', 'user': {'account_name': self.login},
                      'to': self.label_2.text(), 'message': self.textEdit_2.toPlainText()}),
-                encoding='utf8'))
+                encoding='utf8'))))
             self.t.join(0.1)
             data = json.loads(self.response)
             if data['response'] == 200:
                 self.add_message(self.login, self.textEdit_2.toPlainText())
                 self.textEdit_2.clear()
-            else:
-                print(data['error'])
+            self.error.setText(data['error'])
         except Exception as E:
             print(E)
 
