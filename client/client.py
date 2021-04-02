@@ -6,7 +6,6 @@ import threading
 from PyQt5.QtWidgets import QApplication, QMainWindow, QInputDialog
 from PyQt5.QtWidgets import QWidget, QTextEdit, QColorDialog
 from PyQt5.QtCore import QMargins, Qt, pyqtSignal, QObject
-# from interface import *
 from PyQt5 import uic
 
 from cryptography.hazmat.backends import default_backend
@@ -41,7 +40,6 @@ class SettingsDialog(QWidget):
     """Класс окна настроек, изменяющий два основных цвета дизайна приложения"""
     def __init__(self, main):
         super().__init__()
-        # self.setupUi(self)
         uic.loadUi('dialog.ui', self)
         try:
             f = open('settings', 'r').readlines()
@@ -100,7 +98,6 @@ class MyWidget(QMainWindow):
     def __init__(self):
         """Инициализация класса"""
         super().__init__()
-        # self.setupRegUi(self)
         uic.loadUi('reg.ui', self)
         try:
             f = open('settings', 'r').readlines()
@@ -205,6 +202,7 @@ class MyWidget(QMainWindow):
             print(E)
 
     def set_keys(self):
+        """Генерирует ключ для кодирования сообщений"""
         public_key = zlib.decompress(self.client_socket.recv(1024))
         key = Fernet.generate_key()
         self.coder = Fernet(key)
@@ -213,12 +211,17 @@ class MyWidget(QMainWindow):
 
     def messenger(self):
         """Выводит основное окно приложения после успешной авторизации"""
-        # self.setupUi(self)
+        width = self.size().width()
+        height = self.size().height()
+        is_full_screen = self.isFullScreen()
         uic.loadUi('messenger.ui', self)
         self.bull = False
         widget = QWidget(self)
         widget.setLayout(self.gridLayout)
         self.setCentralWidget(widget)
+        self.resize(width, height)
+        if is_full_screen:
+            self.showFullScreen()
         self.t = threading.Thread(target=self.threading_function, daemon=True)
         self.t.start()
         self.responses = []
@@ -242,20 +245,23 @@ class MyWidget(QMainWindow):
                     {'action': 'sign_out', 'user': {'account_name': self.login}}),
                 encoding='utf8'))))
             self.t.join(0.05)
-            data = json.loads(self.response)
         except Exception as E:
             print(E)
         self.client_socket.close()
-        # self.setupRegUi(self)
+        width = self.size().width()
+        height = self.size().height()
+        is_full_screen = self.isFullScreen()
         uic.loadUi('reg.ui', self)
         self.recolor()
         widget = QWidget(self)
         widget.setLayout(self.gridLayout)
         self.setCentralWidget(widget)
+        self.resize(width, height)
+        if is_full_screen:
+            self.showFullScreen()
         x, y = self.size().width() // 4, self.size().height() // 4
         self.gridLayout.setContentsMargins(QMargins(x, y, x, y))
         self.bull = True
-        self.ip = 'localhost'
         self.pushButton.clicked.connect(self.authorize)
         self.pushButton_2.clicked.connect(self.register)
 
@@ -277,7 +283,7 @@ class MyWidget(QMainWindow):
         try:
             name, ok_pressed = QInputDialog.getText(self, "Введите имя контакта",
                                                     "Добавить новый контакт:")
-            if ok_pressed:
+            if ok_pressed and self.login != name:
                 self.client_socket.sendall(zlib.compress(self.coder.encrypt(bytes(
                     json.dumps(
                         {'action': 'add_contact', 'user': {'account_name': self.login},
@@ -289,6 +295,7 @@ class MyWidget(QMainWindow):
                     chat = open(f'messages/{self.login};{name}', 'w')
                     chat.close()
                     self.listWidget.addItem(name)
+                self.error.setText(data['error'])
         except Exception as E:
             print(E)
 
@@ -301,13 +308,17 @@ class MyWidget(QMainWindow):
                     {'action': 'del_contact', 'user': {'account_name': self.login},
                      'user_id': name}),
                 encoding='utf8'))))
-            self.t.join(0.05)
+            self.t.join(0.1)
             data = json.loads(self.response)
             if data['response'] == 200:
+                if self.label_2.text() == self.listWidget.selectedItems()[0].text():
+                    self.label_2.setText('')
+                    self.textEdit.clear()
                 self.listWidget.clear()
                 contacts = self.get_contacts()['contacts']
                 for i in contacts:
                     self.listWidget.addItem(i)
+            self.error.setText(data['error'])
         except Exception as E:
             print(E)
 
@@ -337,6 +348,7 @@ class MyWidget(QMainWindow):
             if data['response'] == 200:
                 self.add_message(self.login, self.textEdit_2.toPlainText())
                 self.textEdit_2.clear()
+            self.error.setText(data['error'])
         except Exception as E:
             print(E)
 

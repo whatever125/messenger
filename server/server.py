@@ -132,12 +132,10 @@ class Server:
                 except Exception:
                     pass
                 break
-            except Exception as e:
-                print(e)
 
     def check_online(self, request, client_socket, con, cur):
         """Проверяет, подключен ли пользователь к серверу"""
-        resp = {'action': 'response', 'response': 200, 'error': None, 'online': None}
+        resp = {'action': 'response', 'response': 200, 'error': '', 'online': None}
         client_login = request['user']['account_name']
         contact_login = request['user_id']
         if not self.check_authorization(client_socket, client_login):
@@ -154,7 +152,7 @@ class Server:
 
     def authorization(self, request, client_socket, con, cur):
         """Авторизация зарегистрированного пользователя"""
-        resp = {'action': 'response', 'response': 200, 'error': None}
+        resp = {'action': 'response', 'response': 200, 'error': ''}
         client_login = request['user']['account_name']
         client_digest = request['user']['password']
         if not self.check_existence(client_login, con, cur):
@@ -171,7 +169,7 @@ class Server:
 
     def registration(self, request, con, cur):
         """Регистрация нового пользователя"""
-        resp = {'action': 'response', 'response': 200, 'error': None}
+        resp = {'action': 'response', 'response': 200, 'error': ''}
         client_login = request['user']['account_name']
         client_digest = request['user']['password']
         if self.check_existence(client_login, con, cur):
@@ -183,7 +181,7 @@ class Server:
 
     def sign_out(self, request, client_socket, con, cur):
         """Производит выход пользователя из сети"""
-        resp = {'action': 'response', 'response': 200, 'error': None}
+        resp = {'action': 'response', 'response': 200, 'error': ''}
         client_login = request['user']['account_name']
         if not self.check_existence(client_login, con, cur):
             resp['response'] = 400
@@ -200,7 +198,7 @@ class Server:
 
     def add_contact(self, request, client_socket, con, cur):
         """Добавление клиента в контакты авторизованного пользователя"""
-        resp = {'action': 'response', 'response': 200, 'error': None}
+        resp = {'action': 'response', 'response': 200, 'error': ''}
         client_login = request['user']['account_name']
         contact_login = request['user_id']
         if not self.check_authorization(client_socket, client_login):
@@ -218,7 +216,7 @@ class Server:
 
     def del_contact(self, request, client_socket, con, cur):
         """Удаление клиента из контактов авторизованного пользователя"""
-        resp = {'action': 'response', 'response': 200, 'error': None}
+        resp = {'action': 'response', 'response': 200, 'error': ''}
         client_login = request['user']['account_name']
         contact_login = request['user_id']
         if not self.check_authorization(client_socket, client_login):
@@ -236,7 +234,7 @@ class Server:
 
     def get_contacts(self, request, client_socket, con, cur):
         """Возвращает список всех контактов авторизованного пользователя"""
-        resp = {'action': 'response', 'response': 200, 'error': None, 'contacts': []}
+        resp = {'action': 'response', 'response': 200, 'error': '', 'contacts': []}
         client_login = request['user']['account_name']
         if not self.check_authorization(client_socket, client_login):
             resp['response'] = 403
@@ -251,7 +249,7 @@ class Server:
 
     def handle_message(self, request, client_socket, con, cur):
         """Обработка сообщения от одного пользователя другому"""
-        resp = {'action': 'response', 'response': 200, 'error': None}
+        resp = {'action': 'response', 'response': 200, 'error': ''}
         client_login = request['user']['account_name']
         contact_login = request['to']
         message = {'action': 'message', 'from': client_login, 'message': None}
